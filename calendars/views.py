@@ -3,7 +3,8 @@ from django.shortcuts import get_object_or_404, render
 from django.http import HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 from django.views import generic
-import pymongo
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
 from django.conf import settings
 
 
@@ -12,45 +13,21 @@ from django.conf import settings
 def index(request):
     return HttpResponse("Hello, world. You're at the calendar index.")
 
-'''
-connect_string = 'mongodb+srv://cvmccoy123:<testingtesting>@cluster0.1tvfg.mongodb.net/' 
-my_client = pymongo.MongoClient(connect_string)
+
+
+
+uri = "mongodb+srv://cvmccoy123:testtest@cluster0.1tvfg.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+# Create a new client and connect to the server
+client = MongoClient(uri, server_api=ServerApi('1'))
+
+try:
+    client.admin.command('ping')
+    print("Pinged your deployment. You successfully connected to MongoDB!")
+except Exception as e:
+    print(e)
 
 # First define the database name
-dbname = my_client['sample_users']
+dbname = client['testData']
 
 # Now get/create collection name (remember that you will see the database in your mongodb cluster only after you create a collection
-collection_name = dbname["userdetails"]
-
-#let's create two documents
-user_1 = {
-    "user_id": "RR000123456",
-    "common_name" : "John",
-    "scientific_name" : "Johnus",
-    "available" : "Y",
-    "category": "Sophomore"
-}
-user_2 = {
-    "user_id": "RR000342522",
-    "common_name" : "Jessica",
-    "scientific_name" : "Jessicus",
-    "available" : "Y",
-    "category" : "Junior"
-}
-# Insert the documents
-collection_name.insert_many([user_1,user_2])
-# Check the count
-count = collection_name.count()
-print(count)
-
-# Read the documents
-med_details = collection_name.find({})
-# Print on the terminal
-for r in med_details:
-    print(r["common_name"])
-# Update one document
-#update_data = collection_name.update_one({'medicine_id':'RR000123456'}, {'$set':{'common_name':'Paracetamol 500'}})
-
-# Delete one document
-#delete_data = collection_name.delete_one({'medicine_id':'RR000123456'})
-'''
+collection_name = dbname["users"]
