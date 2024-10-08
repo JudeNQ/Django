@@ -1,3 +1,4 @@
+from bson import ObjectId
 from django.shortcuts import render
 import re
 from django.db.models import F
@@ -29,7 +30,8 @@ def index(request):
 @csrf_exempt
 def create(request):
     if(request.method == 'POST'):
-        data = json.loads(request.body) #Parse JSON data
+        data = json.loads(request.body)
+        #Parse the JSON data
         eventName = data.get('name')
         eventOrg = data.get('org')
         eventStartTime = data.get('start_time')
@@ -55,8 +57,9 @@ def create(request):
             endTime = datetime.strptime(eventEndTime, '%H:%M').time()
         except ValueError:
             return JsonResponse({"error": "Invalid time format. Please use HH:MM (24-hour format)."}, status=400)
+    
         
-        query = {"name": eventName, "org": eventOrg, "start_time": startTime, "end_time": endTime, "date": date, "location": eventLocation, "bio": eventBio}
+        query = {"name": eventName, "org": eventOrg, "start_time": eventStartTime, "end_time": eventEndTime, "date": date, "location": eventLocation, "bio": eventBio}
         item_count = collection_name.count_documents(query)
         
         if(item_count != 0):
@@ -67,8 +70,8 @@ def create(request):
         updated_data = {
                 'name': eventName,
                 'org': eventOrg,
-                'start_time': startTime,
-                'end_time': endTime,
+                'start_time': eventStartTime,
+                'end_time': eventEndTime,
                 'date': date,
                 'location': eventLocation,
                 'bio': eventBio,
@@ -84,9 +87,10 @@ def create(request):
             result = collection_name.insert_one(updated_data)  # Insert into MongoDB
             # Convert ObjectId to string
             updated_data['_id'] = str(result.inserted_id)
+            updated_data['date'] = str(date)
             return JsonResponse(updated_data)
         except Exception as e:
-            print(f"Error inserting data: {e}")
+            print("Error inserting data: {e}")
             return JsonResponse({"error": str(e)}, status=500)
     return HttpResponse("Only PUT requests are valid (Pretty Please)")
 
@@ -98,7 +102,7 @@ def getall(request):
         stringDate = request.GET.get('date')
         if not stringDate:
             #Return error with an error code
-            return JsonResponse({"error": "No date provided"}, status=400)
+            return JsonResponse({"Error": "No date provided"}, status=400)
         try:
             #Try to convert the date to a date time object
             date = datetime.strptime(stringDate, '%m/%d/%Y')
@@ -111,6 +115,59 @@ def getall(request):
                 "$gte": date
             }
         })
+        event_list = []
+        for event in events:
+            #Convert the MongoID field to one that is readable by JSON
+            event['_id'] = str(event['_id'])
+            event_list.append(event)
+        #For now just update the total # of events and the event list
+        updated_data = {
+                'total': len(event_list),
+                'data': event_list,
+            }
+        return JsonResponse(updated_data)
+        
+    return HttpResponse("Only PUT requests are valid (Pretty Please)")
+
+#Gets a users saved events. Won't do anything if the user doesn't have any saved events... Yeah
+@csrf_exempt
+def getusers(request):
+    if(request.method == 'GET'):
+        #Actually process the request
+        userID = request.GET.get('user')
+        try:
+            userId = ObjectId(userID)
+        except Exception as e:
+            return JsonResponse({'Error' : "Invalid ID format"})
+        
+        #Get the user with the given Id
+        queryUser = {'_id' : userID}
+        
+        #try to get user from database
+        user = dbname['users'].find_one(queryUser)
+        
+        #If the user doesn't exist
+        if not user:
+            return JsonResponse({'Error': "No user exists with that ID"}, status=404)
+        
+        eventIds = user.get('saved_events', [])
+        events = []
+
+        #Convert each event ID into the event object
+        for event_id in eventIds:
+            try:
+                eventId = ObjectId(event_id)
+                #If thats successful get the event from a query
+                queryEvent = {"_id" : eventId}
+                #Try to get the event object from the event database
+                event = collection_name.find_one(queryEvent)
+                if not event:
+                    print("Event isn't real")
+                else:
+                    events.append(event)
+            except Exception as e:
+                print("Failed to get event id: " + event_id)
+        
         event_list = list(events)
         #For now just update the total # of events and the event list
         updated_data = {
@@ -121,36 +178,57 @@ def getall(request):
         
     return HttpResponse("Only PUT requests are valid (Pretty Please)")
 
+#Saves a certain event to a users profile
+#Takes in a JSON file containing the event ID and the user ID
 @csrf_exempt
-def getusers(request):
+def saveevent(request):
     if(request.method == 'POST'):
         data = json.loads(request.body) #Parse JSON data
-        email = data.get('email')
-        password = data.get('password')
+        userId = data.get('user_id')
+        eventId = data.get('event_id')
+        message = ""
         
-        query = {"email": email,"password": password}
-        
-        item_count = collection_name.count_documents(query)
-        if item_count != 0:
-            updated_data = {
-                'email': email,
-                'password': password,  #Encrypted password (or no password)
-                'confirmed': "True"
-            }
-        else:
-            updated_data = {
-                'email': email,
-                'password': password,  #Encrypted password (or no password)
-                'confirmed': "False"
-            }
-        return JsonResponse(updated_data)
+        #Convert the string ids to mongo Id's
         try:
-            
-            #result = collection_name.insert_one(updated_data)  # Insert into MongoDB
-            # Convert ObjectId to string
-            updated_data['_id'] = str(result.inserted_id)
-            return JsonResponse(updated_data)
+            userId = ObjectId(userId)
+            eventId = ObjectId(eventId)
         except Exception as e:
-            print(f"Error inserting data: {e}")
-            return JsonResponse({"error": str(e)}, status=500)
+            return JsonResponse({'message': 'Invalid ID format'}, status=400)
+        
+        #Query that the eventId and userId go to real objects
+        queryUser = { "_id" : userId}
+        queryEvent = { "_id" : eventId}
+        
+        #try to get user from database
+        user = dbname['users'].find(queryUser)
+        
+        #If the user doesn't exist
+        if not user:
+            return JsonResponse({'message': "No user exists with that ID"}, status=404)
+        
+        #try to get event from database
+        event = collection_name.find(queryEvent)
+        
+        #If the event doesn't exist
+        if not event:
+            return JsonResponse({'message': "No event exists with that ID"}, status=404)
+        
+        
+        try:
+            #Try to add the event id to the users lists of saved events
+            dbname['users'].update_one(
+                queryUser, 
+                {"$addToSet" : {"saved_events": str(eventId)}})
+            message = "Event added successfully"
+        except Exception as e:
+            return JsonResponse({'message' : "Failed to update user"}, status=500)
+            
+        updated_data = {
+                'user_id': str(userId),
+                'event_id': str(eventId),
+                'message': message
+            }
+        
+        return JsonResponse(updated_data)
+        
     return HttpResponse("Only PUT requests are valid (Pretty Please)")
