@@ -11,4 +11,8 @@ urlpatterns = [
     path("compare-schedule/", views.compare_schedule, name="compare_schedule"),
     path("compare-event/", views.compare_event, name="compare_event"),
     path("compare-user/", views.compare_user, name="compare_user"),
+
+    # Password reset API endpoints
+    path('password_reset/', views.password_reset_request, name='password_reset_request'),
+    path('reset/<uidb64>/<token>/', views.password_reset_confirm, name='password_reset_confirm'),
 ]

@@ -135,9 +135,27 @@ CORS_ALLOW_ALL_ORIGINS = True
 
 # Email settings for Outlook using environment variables
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.office365.com'
+EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')  # Use environment variable
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')  # Use environment variable
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'your-username@my.unt.edu')
+EMAIL_HOST_USER = 'UNTPlanIt@gmail.com'  # Our Gmail account
+EMAIL_HOST_PASSWORD = 'Rncpkv24'  # Our Gmail account password
+
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
+
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [BASE_DIR / 'templates'],  # Include the 'templates' directory here
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                'django.template.context_processors.debug',
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+            ],
+        },
+    },
+]
