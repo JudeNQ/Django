@@ -1,6 +1,6 @@
 from django.db.models import F, Q
 import re
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, render, redirect
 from django.http import HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 from django.views import generic
@@ -20,6 +20,13 @@ from django.contrib.auth import authenticate, login
 from rest_framework import generics
 from rest_framework.decorators import api_view
 from django.views.decorators.csrf import csrf_exempt
+
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
+from django.contrib.auth.tokens import default_token_generator
+from bson.objectid import ObjectId
 
 #Connect to the server
 # Create a new client and connect to the server
@@ -220,3 +227,128 @@ def compare_user(request):
             return JsonResponse({'message': 'No matching user found'}, status=404)
     
     return JsonResponse({'error': 'Invalid data'}, status=400)
+
+#password reset and confirmation email views
+@csrf_exempt
+@api_view(['POST'])
+def password_reset_request(request):
+    """
+    Handle password reset requests.
+    - Find the user by email in MongoDB.
+    - Generate a token and UID for password reset.
+    - Send a reset email with a reset URL.
+    """
+    data = json.loads(request.body)
+    email = data.get('email')
+
+    # Search for user by email in MongoDB
+    user = collection_name.find_one({"email": email})
+
+    if user:
+        # Generate a token and base64 encode the user ID
+        token = default_token_generator.make_token(user)
+        uid = urlsafe_base64_encode(force_bytes(user['_id']))
+
+        # Prepare password reset URL (for Android app to display)
+        reset_url = f'http://your_frontend_url/reset/{uid}/{token}/'
+
+        # Send the password reset email
+        send_mail(
+            subject="Password Reset Request",
+            message=f'Use the following link to reset your password: {reset_url}',
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+        )
+
+        return JsonResponse({'message': 'Password reset email sent'}, status=200)
+    else:
+        return JsonResponse({'error': 'User not found'}, status=404)
+    
+@csrf_exempt
+@api_view(['POST'])
+def password_reset_confirm(request, uidb64, token):
+    """
+    Confirm password reset and update the user's password in MongoDB.
+    - Decode user ID.
+    - Validate the token and update password.
+    """
+    data = json.loads(request.body)
+    new_password = data.get('new_password')
+
+    try:
+        # Decode the user's ID
+        user_id = urlsafe_base64_decode(uidb64).decode()
+
+        # Find the user in MongoDB
+        user = collection_name.find_one({"_id": ObjectId(user_id)})
+
+        if user and default_token_generator.check_token(user, token):
+            # Hash the new password and update MongoDB
+            hashed_password = make_password(new_password)
+            collection_name.update_one(
+                {"_id": ObjectId(user_id)},
+                {"$set": {"password": hashed_password}}
+            )
+            return JsonResponse({'message': 'Password has been reset'}, status=200)
+        else:
+            return JsonResponse({'error': 'Invalid token or user ID'}, status=400)
+
+    except (TypeError, ValueError, OverflowError):
+        return JsonResponse({'error': 'Invalid user ID'}, status=400)
+    
+# Function to send an account verification email
+def send_verification_email(request, user):
+    token_generator = default_token_generator
+    uidb64 = urlsafe_base64_encode(force_bytes(user.pk))  # Encode the user's ID for use in the URL
+    token = token_generator.make_token(user)  # Generate the unique token for the user
+
+    # Create the email subject and message
+    subject = "Verify your account - PlanIt"
+    message = render_to_string('email_verification.html', {
+        'user': user,
+        'uidb64': uidb64,
+        'token': token,
+        'domain': request.get_host(),  # Get the current domain (used for the link)
+    })
+
+    # Send the email using Django's send_mail function
+    send_mail(
+        subject,
+        message,
+        settings.DEFAULT_FROM_EMAIL,  # From email
+        [user.email],  # To email (the user who is verifying their account)
+        fail_silently=False,  # Raise an error if the email fails to send
+        html_message=message  # Use the HTML template for the email body
+    )
+
+    # Return a JSON response indicating success
+    return JsonResponse({
+        "message": "Verification email sent to " + user.email,
+        "email": user.email
+    })
+
+# View to verify the account after the user clicks the email link
+def verify_account(request, uidb64, token):
+    token_generator = default_token_generator
+    try:
+        # Decode the user ID from the URL
+        uid = urlsafe_base64_decode(uidb64).decode()
+        user = User.objects.get(pk=uid)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        user = None
+
+    # Check if the token is valid for this user
+    if user is not None and token_generator.check_token(user, token):
+        # Activate the user (or set verified=True if using MongoDB)
+        user.is_active = True
+        user.save()
+        # Return a JSON response on success
+        return JsonResponse({
+            "message": "Account successfully verified.",
+            "user_id": user.id
+        })
+    else:
+        # Return an error response if the token is invalid
+        return JsonResponse({
+            "error": "Invalid token or user.",
+        }, status=400)
