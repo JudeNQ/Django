@@ -1,5 +1,5 @@
 from django.db.models import F, Q
-inport re
+import re
 from django.shortcuts import get_object_or_404, render
 from django.http import HttpResponse, HttpResponseRedirect
 from django.urls import reverse
@@ -75,14 +75,9 @@ def create(request):
             # Do not return or print the raw password for security reasons
         }
         
-        return JsonResponse({
-            'message': 'User created successfully!',
-            'username': username,
-            'email': email
-        })
-        
         #If the message is not the empty string, we know we've had an error
         if(message != ""):
+            updated_data['message'] = message
             return JsonResponse(updated_data)
         
         #Attempt to insert the user data into the mongo_db database
@@ -94,45 +89,66 @@ def create(request):
         except Exception as e:
             print(f"Error inserting data: {e}")
             return JsonResponse({"error": str(e)}, status=500)
-    return HttpResponse("Only PUT requests are valid (Pretty Please)")
+    # If the request method is not POST, return an error response
+    return JsonResponse({'error': 'Only POST requests are valid'}, status=400)
 
-        #dbname = client['testData']
-        #collection_name = dbname["users"]
         
 @csrf_exempt
 def login(request):
-    if(request.method == 'POST'):
-        data = json.loads(request.body) #Parse JSON data
+    if request.method == 'POST':
+        data = json.loads(request.body)  # Parse JSON data
+
+        # Get the email, username, and password from the JSON data
         email = data.get('email')
+        username = data.get('username')
         password = data.get('password')
-        
-        query = {"email": email,"password": password}
-        
-        item_count = collection_name.count_documents(query)
-        if item_count != 0:
-            updated_data = {
-                'email': email,
-                'password': password,  #Encrypted password (or no password)
-                'confirmed': "True"
-            }
+
+        # Authenticate the user using Django's built-in authenticate function
+        user = authenticate(request, username=username, password=password)
+
+        if user is not None:
+            # If the user is authenticated, log them in and start a session
+            login(request, user)
+
+            # Return a success response in JSON format
+            return JsonResponse({'message': 'Login successful!', 'username': username})
         else:
-            updated_data = {
-                'email': email,
-                'password': password,  #Encrypted password (or no password)
-                'confirmed': "False"
-            }
-        return JsonResponse(updated_data)
-        try:
-            
-            #result = collection_name.insert_one(updated_data)  # Insert into MongoDB
-            # Convert ObjectId to string
-            updated_data['_id'] = str(result.inserted_id)
-            return JsonResponse(updated_data)
-        except Exception as e:
-            print(f"Error inserting data: {e}")
-            return JsonResponse({"error": str(e)}, status=500)
-    return HttpResponse("Only PUT requests are valid (Pretty Please)")
+            # Check MongoDB if Django authentication fails or to verify extra information
+            query = {"email": email, "password": password}  # You should hash the password before storing/checking
+            item_count = collection_name.count_documents(query)
+
+            # Handle MongoDB results
+            if item_count != 0:
+                updated_data = {
+                    'email': email,
+                    'password': password,  # Ideally, store the hashed password here
+                    'confirmed': "True"
+                }
+            else:
+                updated_data = {
+                    'email': email,
+                    'password': password,  # Hashed password
+                    'confirmed': "False"
+                }
+
+            try:
+                # MongoDB insert code is commented out because you're not creating users in the login function
+                # Uncomment if needed for user creation
+                # result = collection_name.insert_one(updated_data)
+                # Convert ObjectId to string (if you are creating users instead)
+                # updated_data['_id'] = str(result.inserted_id)
+
+                # Return the updated data based on MongoDB verification
+                return JsonResponse(updated_data)
+
+            except Exception as e:
+                print(f"Error inserting data: {e}")
+                return JsonResponse({"error": str(e)}, status=500)
+
+    # If the request method is not POST, return an error response
     return JsonResponse({'error': 'Only POST requests are valid'}, status=400)
+
+
 
 # Comaprison views
 @csrf_exempt
