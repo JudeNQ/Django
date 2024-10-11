@@ -1,4 +1,5 @@
 from django.db.models import F, Q
+inport re
 from django.shortcuts import get_object_or_404, render
 from django.http import HttpResponse, HttpResponseRedirect
 from django.urls import reverse
@@ -21,9 +22,12 @@ from rest_framework.decorators import api_view
 from django.views.decorators.csrf import csrf_exempt
 
 #Connect to the server
-uri = "mongodb+srv://cvmccoy123:testtest@cluster0.1tvfg.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 # Create a new client and connect to the server
+uri = "mongodb+srv://cvmccoy123:testtest@cluster0.1tvfg.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 client = MongoClient(uri, server_api=ServerApi('1'))
+
+dbname = client['testData']
+collection_name = dbname['users']
 
 def index(request):
     return HttpResponse("Hello, world. You're at the user index.")
@@ -35,7 +39,23 @@ def create(request):
         username = data.get('username')
         email = data.get('email')
         password = data.get('password')
-
+        message = ""
+        
+        emailPattern = r'^(\w)+@my.unt.edu$'
+        
+        #Check if the email matches the pattern
+        if(re.match(emailPattern, email)):
+            print("Valid email")
+        else:
+            message = "Invalid Email. Make sure you're using a @my.unt.edu email address"
+            print("Invalid email")
+        
+        query = {"email": email}
+        item_count = collection_name.count_documents(query)
+        
+        if(item_count != 0):
+            message = "This email is already in use"
+        
         # Hash the password using Django's built-in method
         hashed_password = make_password(password)
 
@@ -49,53 +69,69 @@ def create(request):
 
         # Omit the raw password in the response for security reasons
         updated_data = {
-            'name': "Joe Schmo",
+            'username': username,
             'email': email,
             #'password': password  #Encrypted password (or no password)
             # Do not return or print the raw password for security reasons
         }
-
+        
         return JsonResponse({
             'message': 'User created successfully!',
             'username': username,
             'email': email
         })
         
+        #If the message is not the empty string, we know we've had an error
+        if(message != ""):
+            return JsonResponse(updated_data)
+        
+        #Attempt to insert the user data into the mongo_db database
+        try:
+            result = collection_name.insert_one(updated_data)  # Insert into MongoDB
+            # Convert ObjectId to string
+            updated_data['_id'] = str(result.inserted_id)
+            return JsonResponse(updated_data)
+        except Exception as e:
+            print(f"Error inserting data: {e}")
+            return JsonResponse({"error": str(e)}, status=500)
+    return HttpResponse("Only PUT requests are valid (Pretty Please)")
+
         #dbname = client['testData']
         #collection_name = dbname["users"]
         
-        #print(updated_data)
-        #collection_name.insert_one()
-        #return JsonResponse(updated_data)
-    #return HttpResponse("Only PUT requests are valid (Pretty Please)")
-    return JsonResponse({'error': 'Only POST requests are valid'}, status=400)
-
 @csrf_exempt
-@api_view(['POST'])
-def user_login(request):
-    if request.method == 'POST':
-        # Parse the JSON body of the request
-        data = json.loads(request.body)
-        
-        # Extract the username and password from the parsed data
-        username = data.get('username')
+def login(request):
+    if(request.method == 'POST'):
+        data = json.loads(request.body) #Parse JSON data
+        email = data.get('email')
         password = data.get('password')
-
-        # Authenticate the user using Django's built-in authenticate function
-        # It checks if the username and password match a valid user in the database
-        user = authenticate(request, username=username, password=password)
-
-        if user is not None:
-            # If the user is authenticated, log them in and start a session
-            login(request, user)
-            
-            # Return a success response in JSON format
-            return JsonResponse({'message': 'Login successful!', 'username': username})
+        
+        query = {"email": email,"password": password}
+        
+        item_count = collection_name.count_documents(query)
+        if item_count != 0:
+            updated_data = {
+                'email': email,
+                'password': password,  #Encrypted password (or no password)
+                'confirmed': "True"
+            }
         else:
-            # If authentication fails, return an error response
-            return JsonResponse({'error': 'Invalid username or password'}, status=401)
-    
-    # If the request method is not POST, return an error response
+            updated_data = {
+                'email': email,
+                'password': password,  #Encrypted password (or no password)
+                'confirmed': "False"
+            }
+        return JsonResponse(updated_data)
+        try:
+            
+            #result = collection_name.insert_one(updated_data)  # Insert into MongoDB
+            # Convert ObjectId to string
+            updated_data['_id'] = str(result.inserted_id)
+            return JsonResponse(updated_data)
+        except Exception as e:
+            print(f"Error inserting data: {e}")
+            return JsonResponse({"error": str(e)}, status=500)
+    return HttpResponse("Only PUT requests are valid (Pretty Please)")
     return JsonResponse({'error': 'Only POST requests are valid'}, status=400)
 
 # Comaprison views
