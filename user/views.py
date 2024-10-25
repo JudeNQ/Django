@@ -123,13 +123,16 @@ def login(request):
             # Check MongoDB if Django authentication fails or to verify extra information
             query = {"email": email, "password": password}  # You should hash the password before storing/checking
             item_count = collection_name.count_documents(query)
+            user = collection_name.find_one(query)
+            
 
             # Handle MongoDB results
             if item_count != 0:
                 updated_data = {
                     'email': email,
                     'password': password,  # Ideally, store the hashed password here
-                    'confirmed': "True"
+                    'confirmed': "True",
+                    'id': str(user.id)
                 }
             else:
                 updated_data = {
