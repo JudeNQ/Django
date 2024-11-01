@@ -35,6 +35,7 @@ def create(request):
         groupName = data.get('name')
         groupBio = data.get('bio')
         groupLeader = data.get('leader')
+        password = data.get('password')
         
         #Convert the string ids to mongo Id's
         try:
@@ -49,7 +50,8 @@ def create(request):
             'name': groupName,
             'bio': groupBio,
             'leader': groupLeader,
-            'members': userList
+            'members': userList,
+            'password': password
         }
         
         #Attempt to insert the group data into the mongo_db database
@@ -66,23 +68,15 @@ def create(request):
 #Gets a users saved groups. Won't do anything if the user doesn't have any saved groups... Yeah
 @csrf_exempt
 def getGroups(request):
+    #See if a user ID was specified
     if(request.method == 'GET'):
         #Process the userId given with the GET request
-        userID = request.GET.get('user')
+        if(request.GET.get('user')):
+            userID = request.GET.get('user')
         try:
             userId = ObjectId(userID)
         except Exception as e:
             return JsonResponse({'Error' : "Invalid ID format"})
-        
-        #Get the user with the given Id
-        queryUser = {'_id' : userID}
-        
-        #try to get user from database
-        user = dbname['users'].find_one(queryUser)
-        
-        #If the user doesn't exist
-        if not user:
-            return JsonResponse({'Error': "No user exists with that ID"}, status=404)
         
         #Search through all saved groups to find ones that the userID is apart of
         groups = []
@@ -105,6 +99,68 @@ def getGroups(request):
         updated_data = {
                 'total': group_list.count(),
                 'data': group_list,
+            }
+        return JsonResponse(updated_data)
+    else:
+        allGroups = collection_name.find()
+        groupList = []
+        groupList = list(allGroups)
+        updated_data = {
+            'total': groupList.count(),
+            'data': groupList
+        }
+        return JsonResponse(updated_data)
+        
+        
+    return HttpResponse("Only GET requests are valid (Pretty Please)")
+
+#Joins a specific group.
+#Takes in a JSON file with the group ID, UserID, and the password entered.
+#Should return a message
+@csrf_exempt
+def join(request):
+    if(request.method == 'POST'):
+        #load the JSON file
+        data = json.loads(request.body)
+        #get the ids
+        userID = data.get('user')
+        groupID = data.get('group')
+        password = data.get('password')
+        try:
+            userId = ObjectId(userID)
+            groupId = ObjectId(groupID)
+        except Exception as e:
+            return JsonResponse({'Error' : "Invalid ID format"})
+        
+        #get the group based off the id
+        group = collection_name.find_one(groupId)
+        #make sure the password is good
+        if(group['password'] != password):
+            return JsonResponse({'Error' : "Invalid Password"})
+        
+        #now check to see if the user is already part of the group
+        members = group['members']
+        for member in members:
+            if(member['_id'] == userId):
+                return JsonResponse({'Error' : "User already in the group"})
+        
+        #now that its all good insert the member into members
+        memberList = []
+        memberList = list(members)
+        memberList.append(userId)
+        
+        #Set what we're going to update
+        update_operation = { '$set' : 
+            { 'members' : memberList }
+        }
+        try:
+            collection_name.update_one(groupID, update_operation)
+        except:
+            return JsonResponse({'Error' : "Error joining group"})
+        
+        #For now just update the total # of groups and the group list
+        updated_data = {
+                'message': "Joining group was successful"
             }
         return JsonResponse(updated_data)
         
