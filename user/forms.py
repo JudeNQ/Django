@@ -1,5 +1,5 @@
 #forms.py is a file that will handle user input (like schedules and user information). 
-
+'''
 from django import forms
 from .models import Schedule, Event, User
 
@@ -20,3 +20,4 @@ class UserCompareForm(forms.Form):
     # Using user model that has a username and email fields
     username = forms.CharField(max_length=150, required=True)
     email = forms.EmailField(required=True)
+'''

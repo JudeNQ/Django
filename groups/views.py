@@ -49,7 +49,7 @@ def create(request):
         updated_data = {
             'name': groupName,
             'bio': groupBio,
-            'leader': groupLeader,
+            'leader': userId,
             'members': userList,
             'password': password
         }
@@ -59,11 +59,13 @@ def create(request):
             result = collection_name.insert_one(updated_data)  # Insert into MongoDB
             # Convert ObjectId to string
             updated_data['_id'] = str(result.inserted_id)
+            updated_data['leader'] = groupLeader
+            updated_data['members'] = [str(member) for member in updated_data['members']]
             return JsonResponse(updated_data)
         except Exception as e:
-            print("Error inserting data: {e}")
+            print(f"Error inserting data: {e}")
             return JsonResponse({"error": str(e)}, status=500)
-    return HttpResponse("Only PUT requests are valid (Pretty Please)")
+    return HttpResponse("Only POST requests are valid (Pretty Please)")
 
 #Gets a users saved groups. Won't do anything if the user doesn't have any saved groups... Yeah
 @csrf_exempt
@@ -73,44 +75,55 @@ def getGroups(request):
         #Process the userId given with the GET request
         if(request.GET.get('user')):
             userID = request.GET.get('user')
-        try:
-            userId = ObjectId(userID)
-        except Exception as e:
-            return JsonResponse({'Error' : "Invalid ID format"})
-        
-        #Search through all saved groups to find ones that the userID is apart of
-        groups = []
-        
-        #Get all the groups from the database
-        allGroups =collection_name.find()
-        
-        #Loop through each group
-        for group in allGroups:
-            members = group['members']
-            #loop through each member thats part of the group
-            for member in members:
-                #If the memberID = userID then yippee (should change this in the future)
-                if(member == userID):
-                    groups.append(group)
-                    break
-        
-        group_list = list(groups)
-        #For now just update the total # of groups and the group list
-        updated_data = {
-                'total': group_list.count(),
-                'data': group_list,
+            try:
+                userId = ObjectId(userID)
+            except Exception as e:
+                return JsonResponse({'Error' : "Invalid ID format"})
+            
+            #Search through all saved groups to find ones that the userID is apart of
+            groups = []
+            group_list = []
+            #Get all the groups from the database
+            allGroups =collection_name.find()
+            
+            #Loop through each group
+            for group in allGroups:
+                members = group['members']
+                #loop through each member thats part of the group
+                for member in members:
+                    #If the memberID = userID then yippee (should change this in the future)
+                    if(member == userID):
+                        groups.append(group)
+                        break
+            
+            for group in groups:
+                #Convert the MongoID field to one that is readable by JSON
+                group['_id'] = str(group['_id'])
+                group['leader'] = str(group['leader'])
+                group['members'] = [str(member) for member in group['members']]
+                group_list.append(group)
+                
+            #For now just update the total # of groups and the group list
+            updated_data = {
+                    'total': len(group_list),
+                    'data': group_list,
+                }
+            return JsonResponse(updated_data)
+        else:
+            allGroups = collection_name.find()
+            group_list = []
+            for group in allGroups:
+                #Convert the MongoID field to one that is readable by JSON
+                group['_id'] = str(group['_id'])
+                group['leader'] = str(group['leader'])
+                group['members'] = [str(member) for member in group['members']]
+                group_list.append(group)
+                
+            updated_data = {
+                'total': len(group_list),
+                'data': group_list
             }
-        return JsonResponse(updated_data)
-    else:
-        allGroups = collection_name.find()
-        groupList = []
-        groupList = list(allGroups)
-        updated_data = {
-            'total': groupList.count(),
-            'data': groupList
-        }
-        return JsonResponse(updated_data)
-        
+            return JsonResponse(updated_data)
         
     return HttpResponse("Only GET requests are valid (Pretty Please)")
 
@@ -139,26 +152,22 @@ def join(request):
             return JsonResponse({'Error' : "Invalid Password"})
         
         #now check to see if the user is already part of the group
-        members = group['members']
-        for member in members:
-            if(member['_id'] == userId):
-                return JsonResponse({'Error' : "User already in the group"})
+        members = group.get('members', [])
+        if userId in members:
+            return JsonResponse({'Error': "User already in the group"}, status=409)
         
         #now that its all good insert the member into members
-        memberList = []
-        memberList = list(members)
-        memberList.append(userId)
+        members.append(userId)
         
-        #Set what we're going to update
-        update_operation = { '$set' : 
-            { 'members' : memberList }
-        }
+        # Set the update operation
+        update_operation = {'$set': {'members': members}}
+        
         try:
-            collection_name.update_one(groupID, update_operation)
-        except:
-            return JsonResponse({'Error' : "Error joining group"})
+            collection_name.update_one({'_id': groupId}, update_operation)
+        except Exception as e:
+            return JsonResponse({'Error': "Error joining group", 'Details': str(e)}, status=500)
         
-        #For now just update the total # of groups and the group list
+        #For now just send the success message
         updated_data = {
                 'message': "Joining group was successful"
             }
