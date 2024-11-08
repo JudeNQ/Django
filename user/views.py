@@ -7,8 +7,8 @@ from django.views import generic
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from django.conf import settings
-from .models import User, Schedule, Event
-from .forms import UserCompareForm, ScheduleCompareForm, EventCompareForm
+#from .models import Schedule, Event
+#from .forms import UserCompareForm, ScheduleCompareForm, EventCompareForm
 
 
 import json
@@ -123,13 +123,16 @@ def login(request):
             # Check MongoDB if Django authentication fails or to verify extra information
             query = {"email": email, "password": password}  # You should hash the password before storing/checking
             item_count = collection_name.count_documents(query)
+            user = collection_name.find_one(query)
+            
 
             # Handle MongoDB results
             if item_count != 0:
                 updated_data = {
                     'email': email,
                     'password': password,  # Ideally, store the hashed password here
-                    'confirmed': "True"
+                    'confirmed': "True",
+                    'id': str(user['_id'])
                 }
             else:
                 updated_data = {
@@ -156,7 +159,7 @@ def login(request):
     return JsonResponse({'error': 'Only POST requests are valid'}, status=400)
 
 
-
+'''
 # Comaprison views
 @csrf_exempt
 @api_view(['POST'])
@@ -352,3 +355,4 @@ def verify_account(request, uidb64, token):
         return JsonResponse({
             "error": "Invalid token or user.",
         }, status=400)
+'''
