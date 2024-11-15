@@ -6,6 +6,6 @@ urlpatterns = [
     path("", views.index, name="index"),
     path("create/", views.create, name="create"),
     path("getall/", views.getall, name="getall"),
-    path("getusers/", views.getusers, name="getusers"),
-    path("saveevent/", views.saveevent, name="saveevent")
+    path("getUsers/", views.getusers, name="getusers"),
+    path("saveEvent/", views.saveevent, name="saveevent")
 ]
