@@ -205,49 +205,59 @@ def getschedule(request):
         members = group.get('members', [])
         
         for member in members:
-            schedules.append(members['schedule'])
+            #Fetch the user member
+            userModel = dbname['users'].find_one({"_id": member})
+
+            if userModel and 'schedule' in userModel:
+                #Add the schedule only if it exists
+                schedules.append(userModel['schedule'])
         
         allDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         unscheduled = {}
         
+        #Go through every day of the week
         for day in allDays:
-            #Gather and merge all time ranges for the current day (for each schedule for each member)
             all_times = []
+            #Get the times all in one list
             for schedule in schedules:
-                #Add
-                all_times.extend(schedule.get(day, []))
+                day_times = schedule.get(day, [])
+                for time_range in day_times:
+                    if isinstance(time_range, dict):
+                        #Extract using dictionary keys
+                        all_times.append((time_range["first"], time_range["second"]))
+                    elif isinstance(time_range, (list, tuple)):
+                        #If already a tuple or list, append directly
+                        all_times.append((time_range[0], time_range[1]))
 
-            #Sort by start time (from 00:00-24:00)
+            #We don't have a schedule for that day
+            if not all_times:
+                unscheduled[day] = [{"first": "00:00", "second": "24:00"}]
+                continue
+
+            #sort the times (ascending) and merge times that overlap
             all_times.sort(key=lambda x: x[0])
-
-            #Merge overlapping or contiguous intervals (so we get the complementary times)
             merged = []
             for start, end in all_times:
-                #No overlap
                 if not merged or start > merged[-1][1]:
                     merged.append((start, end))
                 else:
-                    #Merge time
                     merged[-1] = (merged[-1][0], max(merged[-1][1], end))
 
-            #Find gaps between merged intervals
+            #Find all the gaps (a time when there isn't a schedule)
             gaps = []
             previous_end = "00:00"
             for start, end in merged:
-                #We found a gap
                 if previous_end < start:
-                    gaps.append((previous_end, start))
+                    gaps.append({"first": previous_end, "second": start})
                 previous_end = end
 
-            #Add the gap from the last interval to midnight (who's up that late anyways)
             if previous_end < "24:00":
-                gaps.append((previous_end, "24:00"))
+                gaps.append({"first": previous_end, "second": "24:00"})
 
             unscheduled[day] = gaps
             
-        updated_data = {
-            'times': unscheduled
-        }
-        return JsonResponse(updated_data)
+        print(unscheduled)
+        
+        return JsonResponse(unscheduled)
         
     return HttpResponse("Only GET requests are valid (Pretty Please)")
