@@ -43,7 +43,7 @@ def index(request):
 def create(request):
     if(request.method == 'POST'):
         data = json.loads(request.body) #Parse JSON data
-        username = data.get('username')
+        name = data.get('name')
         email = data.get('email')
         password = data.get('password')
         message = ""
@@ -65,26 +65,28 @@ def create(request):
         
         # Hash the password using Django's built-in method
         hashed_password = make_password(password)
-
+        
+        '''
         # Check if the user already exists (optional but recommended)
-        if User.objects.filter(username=username).exists():
+        if User.objects.filter(name=name).exists():
             return JsonResponse({'error': 'Username already taken'}, status=400)
         
         # Create a new user instance
-        user = User(username=username, email=email, password=hashed_password)
+        user = User(name=name, email=email, password=hashed_password)
         user.save()  # Save the user to the database
+        '''
 
         # Omit the raw password in the response for security reasons
         updated_data = {
-            'username': username,
+            'name': name,
             'email': email,
-            #'password': password  #Encrypted password (or no password)
+            'password': password,  #Encrypted password (or no password)
+            'message': message
             # Do not return or print the raw password for security reasons
         }
         
         #If the message is not the empty string, we know we've had an error
         if(message != ""):
-            updated_data['message'] = message
             return JsonResponse(updated_data)
         
         #Attempt to insert the user data into the mongo_db database
@@ -93,6 +95,45 @@ def create(request):
             # Convert ObjectId to string
             updated_data['_id'] = str(result.inserted_id)
             return JsonResponse(updated_data)
+        except Exception as e:
+            print(f"Error inserting data: {e}")
+            return JsonResponse({"error": str(e)}, status=500)
+    # If the request method is not POST, return an error response
+    return JsonResponse({'error': 'Only POST requests are valid'}, status=400)
+
+
+
+@csrf_exempt
+def createschedule(request):
+    if(request.method == 'POST'):
+        data = json.loads(request.body) #Parse JSON data
+        userRawId = data.get('_id')
+        schedule = data.get('Schedule')
+        
+        try:
+            userId = ObjectId(userRawId)
+        except Exception as e:
+            return JsonResponse({'Error' : "Invalid ID format"}, status=404)
+        
+        #Get the user with the given Id
+        queryUser = {'_id' : userId}
+        
+        #try to get user from database
+        user = collection_name.find_one(queryUser)
+        
+        #If the user doesn't exist
+        if not user:
+            return JsonResponse({'Error': "No user exists with that ID"}, status=404)
+        
+        #Attempt to insert the user data into the mongo_db database
+        try:
+            #Add the schedule to the users model
+            collection_name.update_one(
+                {"_id": userId},
+                {"$set": {"schedule": schedule}},
+                upsert=True
+            )
+            return JsonResponse({"message": "Schedule saved successfully!"}, status=200)
         except Exception as e:
             print(f"Error inserting data: {e}")
             return JsonResponse({"error": str(e)}, status=500)

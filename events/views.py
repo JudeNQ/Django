@@ -134,14 +134,17 @@ def getall(request):
 def getusers(request):
     if(request.method == 'GET'):
         #Actually process the request
-        userID = request.GET.get('user')
+        userID = request.GET.get('user', None)
+        print("User id " + userID)
+        if not userID:
+            return JsonResponse({'error': 'User ID not provided'}, status=400)
         try:
             userId = ObjectId(userID)
         except Exception as e:
             return JsonResponse({'Error' : "Invalid ID format"})
         
         #Get the user with the given Id
-        queryUser = {'_id' : userID}
+        queryUser = {'_id' : userId}
         
         #try to get user from database
         user = dbname['users'].find_one(queryUser)
@@ -168,10 +171,15 @@ def getusers(request):
             except Exception as e:
                 print("Failed to get event id: " + event_id)
         
-        event_list = list(events)
+        event_list = []
+        for event in events:
+            #Convert the MongoID field to one that is readable by JSON
+            event['_id'] = str(event['_id'])
+            event_list.append(event)
+            
         #For now just update the total # of events and the event list
         updated_data = {
-                'total': event_list.count(),
+                'total': len(event_list),
                 'data': event_list,
             }
         return JsonResponse(updated_data)

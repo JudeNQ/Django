@@ -148,7 +148,9 @@ def join(request):
         #get the group based off the id
         group = collection_name.find_one(groupId)
         #make sure the password is good
+        print("Entered password " + password + " and group password " + group['password'])
         if(group['password'] != password):
+            print("Error, passwords don't match")
             return JsonResponse({'Error' : "Invalid Password"})
         
         #now check to see if the user is already part of the group
@@ -171,6 +173,81 @@ def join(request):
         updated_data = {
                 'message': "Joining group was successful"
             }
+        return JsonResponse(updated_data)
+        
+    return HttpResponse("Only GET requests are valid (Pretty Please)")
+
+#Gets the free time for a specific group
+#Takes in the group ID as a query
+@csrf_exempt
+def getschedule(request):
+    if(request.method == 'GET'):
+        #Get the group ID from query
+        groupRawId = request.GET.get('group', None)
+        if not groupRawId:
+            return JsonResponse({'error': 'Group ID not provided'}, status=400)
+        
+        #Convert the raw ID into a Mongo ID
+        try:
+            groupId = ObjectId(groupRawId)
+        except Exception as e:
+            return JsonResponse({'Error' : "Invalid ID format"})
+        
+        #get the group based off the id
+        group = collection_name.find_one(groupId)
+        
+        #If the group doesn't exist
+        if not group:
+            return JsonResponse({'Error': "No group exists with that ID"}, status=404)
+        
+        #Now get every members schedule
+        schedules = []
+        members = group.get('members', [])
+        
+        for member in members:
+            schedules.append(members['schedule'])
+        
+        allDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        unscheduled = {}
+        
+        for day in allDays:
+            #Gather and merge all time ranges for the current day (for each schedule for each member)
+            all_times = []
+            for schedule in schedules:
+                #Add
+                all_times.extend(schedule.get(day, []))
+
+            #Sort by start time (from 00:00-24:00)
+            all_times.sort(key=lambda x: x[0])
+
+            #Merge overlapping or contiguous intervals (so we get the complementary times)
+            merged = []
+            for start, end in all_times:
+                #No overlap
+                if not merged or start > merged[-1][1]:
+                    merged.append((start, end))
+                else:
+                    #Merge time
+                    merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+
+            #Find gaps between merged intervals
+            gaps = []
+            previous_end = "00:00"
+            for start, end in merged:
+                #We found a gap
+                if previous_end < start:
+                    gaps.append((previous_end, start))
+                previous_end = end
+
+            #Add the gap from the last interval to midnight (who's up that late anyways)
+            if previous_end < "24:00":
+                gaps.append((previous_end, "24:00"))
+
+            unscheduled[day] = gaps
+            
+        updated_data = {
+            'times': unscheduled
+        }
         return JsonResponse(updated_data)
         
     return HttpResponse("Only GET requests are valid (Pretty Please)")

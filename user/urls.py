@@ -5,6 +5,7 @@ app_name = "user"
 urlpatterns = [
     path("", views.index, name="index"),
     path("create/", views.create, name="create"),
+    path("createschedule/", views.createschedule, name="createschedule"),
     path("login/", views.login, name="login"),
 
     #Path to the comparison views
