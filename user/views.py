@@ -98,38 +98,62 @@ def login_view(request):
 
 
 @csrf_exempt
-@api_view(['POST'])
+@api_view(['GET', 'POST'])
 def profile_view(request):
     """
     View and update user profile.
     """
-    data = json.loads(request.body)
-    user_id = request.data.get("user_id")  # User should send their user_id in the body
-    updates = {}
+    if request.method == 'GET':
+        # Retrieve the user's profile by user_id (assume it's passed in the query parameters)
+        user_id = request.query_params.get("user_id")
 
-    # Handle profile updates (username, icon, location)
-    if "username" in data:
-        updates["username"] = data["username"]
-    if "icon" in request.FILES:
-        icon_file = request.FILES['icon']
-        updates["icon"] = ContentFile(icon_file.read())
+        if not user_id:
+            return JsonResponse({"error": "User ID is required"}, status=400)
 
-    if updates:
-        try:
-            collection_name.update_one({"_id": ObjectId(user_id)}, {"$set": updates})
-            return JsonResponse({'message': 'Profile updated successfully!'})
-        except Exception as e:
-            return JsonResponse({'error': f"Failed to update profile: {str(e)}"}, status=500)
-    else:
-        # Fetch the profile
+        # Fetch the user profile from MongoDB
         profile = collection_name.find_one({"_id": ObjectId(user_id)})
-        if profile:
-            return JsonResponse({
-                'username': profile.get('username'),
-                'icon': profile.get('icon', 'default_icon.png'),
-                'location': profile.get('location', ''),
-            })
-        return JsonResponse({'error': 'Profile not found'}, status=404)
+
+        if not profile:
+            return JsonResponse({"error": "Profile not found"}, status=404)
+
+        # Count the number of events and organizations associated with the user
+        events_count = collection_name.count_documents({"user_id": user_id, "type": "event"})
+        organizations_count = collection_name.count_documents({"user_id": user_id, "type": "organization"})
+
+        # Return the profile data with event and organization counts
+        return JsonResponse({
+            "username": profile.get('username'),
+            "icon": profile.get('icon', 'default_icon.png'),
+            "events_count": events_count,
+            "organizations_count": organizations_count
+        })
+
+    elif request.method == 'POST':
+        # Handle profile updates (like username or icon)
+        data = json.loads(request.body)
+        user_id = data.get("user_id")
+
+        if not user_id:
+            return JsonResponse({"error": "User ID is required"}, status=400)
+
+        updates = {}
+
+        # Handle profile updates (username, icon)
+        if "username" in data:
+            updates["username"] = data["username"]
+        if "icon" in request.FILES:
+            icon_file = request.FILES['icon']
+            updates["icon"] = ContentFile(icon_file.read())
+
+        if updates:
+            try:
+                collection_name.update_one({"_id": ObjectId(user_id)}, {"$set": updates})
+                return JsonResponse({'message': 'Profile updated successfully!'})
+            except Exception as e:
+                return JsonResponse({'error': f"Failed to update profile: {str(e)}"}, status=500)
+
+        return JsonResponse({'error': 'No updates provided'}, status=400)
+
 
 
 @csrf_exempt
